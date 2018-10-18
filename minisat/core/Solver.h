@@ -116,6 +116,7 @@ public:
     virtual void garbageCollect();
     void    checkGarbage(double gf);
     void    checkGarbage();
+    void    is_muser_(bool val);
 
     // Extra results: (read-only member variable)
     //
@@ -140,6 +141,7 @@ public:
 
     int       restart_first;      // The initial restart limit.                                                                (default 100)
     double    restart_inc;        // The factor with which the restart limit is multiplied in each restart.                    (default 1.5)
+    bool       is_muser;
     double    learntsize_factor;  // The intitial limit for learnt clauses is a factor of the original clauses.                (default 1 / 3)
     double    learntsize_inc;     // The limit for learnt clauses is multiplied with this factor each restart.                 (default 1.1)
 
@@ -190,6 +192,7 @@ protected:
     vec<CRef>           clauses;          // List of problem clauses.
     vec<CRef>           learnts;          // List of learnt clauses.
     vec<Lit>            trail;            // Assignment stack; stores all assigments made in the order they were made.
+    vec<Lit>            old_trail;
     vec<int>            trail_lim;        // Separator indices for different decision levels in 'trail'.
     vec<Lit>            assumptions;      // Current set of assumptions provided to solve by the user.
 
@@ -199,6 +202,7 @@ protected:
     VMap<lbool>         user_pol;         // The users preferred polarity of each variable.
     VMap<char>          decision;         // Declares if a variable is eligible for selection in the decision heuristic.
     VMap<VarData>       vardata;          // Stores reason and level for each variable.
+    VMap<CRef>          oldreasons;
     OccLists<Lit, vec<Watcher>, WatcherDeleted, MkIndexLit>
                         watches;          // 'watches[lit]' is a list of constraints watching 'lit' (will go there if literal becomes true).
 
@@ -333,6 +337,8 @@ inline void Solver::checkGarbage(double gf){
     if (ca.wasted() > ca.size() * gf)
         garbageCollect(); }
 
+    inline void Solver::is_muser_(bool val) { this->is_muser = val;}
+    
 // NOTE: enqueue does not set the ok flag! (only public methods do)
 inline bool     Solver::enqueue         (Lit p, CRef from)      { return value(p) != l_Undef ? value(p) != l_False : (uncheckedEnqueue(p, from), true); }
 inline bool     Solver::addClause       (const vec<Lit>& ps)    { ps.copyTo(add_tmp); return addClause_(add_tmp); }
@@ -343,7 +349,7 @@ inline bool     Solver::addClause       (Lit p, Lit q, Lit r)   { add_tmp.clear(
 inline bool     Solver::addClause       (Lit p, Lit q, Lit r, Lit s){ add_tmp.clear(); add_tmp.push(p); add_tmp.push(q); add_tmp.push(r); add_tmp.push(s); return addClause_(add_tmp); }
 
 inline bool     Solver::isRemoved       (CRef cr)         const { return ca[cr].mark() == 1; }
-inline bool     Solver::locked          (const Clause& c) const { return value(c[0]) == l_True && reason(var(c[0])) != CRef_Undef && ca.lea(reason(var(c[0]))) == &c; }
+inline bool     Solver::locked          (const Clause& c) const { return (value(c[0]) == l_True && reason(var(c[0])) != CRef_Undef && ca.lea(reason(var(c[0]))) == &c) || (oldreasons[var(c[0])] != CRef_Undef); }
 inline void     Solver::newDecisionLevel()                      { trail_lim.push(trail.size()); }
 
 inline int      Solver::decisionLevel ()      const   { return trail_lim.size(); }

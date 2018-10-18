@@ -147,6 +147,7 @@ public:
   int nSucc_Solves() { return (int) succ_solves; }
   int nSatSolvesSinceTimer() { return (int) satSolves - prevSatSolves; }
   int nSatSolves() { return (int) satSolves; }
+    void is_muser_(bool val) {Solver::is_muser_(val);};
   
  protected:
   const Wcnf* theWcnf;

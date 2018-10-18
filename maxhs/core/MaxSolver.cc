@@ -1578,8 +1578,11 @@ void MaxSolver::minimize_muser(vector<Lit> &con, double mus_cpu_lim) {
     osize = con.size();
     //std::sort(con.begin(), con.end(), minConf);
     std::sort(con.begin(), con.end(), blit_lt);
-    if(mus_cpu_lim > 0)
+    if(mus_cpu_lim > 0) {
+      muser->is_muser_(true);
       muser->musBudget(con, mus_cpu_lim);
+      muser->is_muser_(false);
+    }
     else
       muser->mus(con);
     //debug

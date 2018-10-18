@@ -69,6 +69,7 @@ Solver::Solver() :
   , min_learnts_lim  (opt_min_learnts_lim)
   , restart_first    (opt_restart_first)
   , restart_inc      (opt_restart_inc)
+  , is_muser         (false)
 
     // Parameters (the rest):
     //
@@ -129,12 +130,14 @@ Var Solver::newVar(lbool upol, bool dvar)
     watches  .init(mkLit(v, true ));
     assigns  .insert(v, l_Undef);
     vardata  .insert(v, mkVarData(CRef_Undef, 0));
+    oldreasons.insert(v, CRef_Undef);
     activity .insert(v, rnd_init_act ? drand(random_seed) * 0.00001 : 0);
     seen     .insert(v, 0);
     polarity .insert(v, true);
     user_pol .insert(v, upol);
     decision .reserve(v);
     trail    .capacity(v+1);
+    old_trail.capacity(v+1);
     setDecisionVar(v, dvar);
     return v;
 }
@@ -144,7 +147,7 @@ Var Solver::newVar(lbool upol, bool dvar)
 // releases of the same variable).
 void Solver::releaseVar(Lit l)
 {
-    if (value(l) == l_Undef){
+    if (value(l) == l_Undef && oldreasons[var(l)] == CRef_Undef){
         addClause(l);
         released_vars.push(var(l));
     }
@@ -213,7 +216,10 @@ void Solver::removeClause(CRef cr) {
     Clause& c = ca[cr];
     detachClause(cr);
     // Don't leave pointers to free'd memory!
-    if (locked(c)) vardata[var(c[0])].reason = CRef_Undef;
+    if (locked(c)) {
+        vardata[var(c[0])].reason = CRef_Undef;
+        oldreasons[var(c[0])] = CRef_Undef;
+    }
     c.mark(1); 
     ca.free(cr);
 }
@@ -791,7 +797,7 @@ lbool Solver::search(int nof_conflicts)
             if (decisionLevel() == 0 && !simplify())
                 return l_False;
 
-            if (learnts.size()-nAssigns() >= max_learnts)
+            if (learnts.size()-nAssigns()-old_trail.size() >= max_learnts)
                 // Reduce the set of learnt clauses:
                 reduceDB();
 
@@ -808,6 +814,43 @@ lbool Solver::search(int nof_conflicts)
                         uncheckedEnqueue(p);
                     }
                 }
+                if (!is_muser) {
+                //int saved = 0, total = old_trail.size(), firstfalse = -1;
+                for (int i = 0; i < old_trail.size(); i++) {
+                    if (value(old_trail[i]) == l_Undef) {
+                        bool valid = true;
+                        CRef old_reason = oldreasons[var(old_trail[i])];
+                        if (old_reason != CRef_Undef) {
+                            if (ca[old_reason][0] != old_trail[i]) {
+                                valid = false;
+                            }
+                            else {
+                                for (int j = 1; j < ca[old_reason].size(); j++) {
+                                    if (value(ca[old_reason][j]) != l_False) {
+                                        valid = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (valid) {
+                                uncheckedEnqueue(old_trail[i], old_reason);
+                                //saved++;
+                            }
+                            /*else if (firstfalse == -1) {
+                                firstfalse = i;
+                            }*/
+                        }
+                    }
+                }
+                //if (total > 0) printf("SAVED %d out of %d. firstfalse: %d\n", saved, total, firstfalse);
+                }
+                else {
+                    is_muser = false;
+                }
+                for (int i = 0; i < old_trail.size(); i++) {
+                    oldreasons[var(old_trail[i])] = CRef_Undef;
+                }
+                old_trail.clear();
             }
             else if (decisionLevel() > 0) {
 
@@ -916,6 +959,24 @@ lbool Solver::solve_()
     }else if (status == l_False && conflict.size() == 0)
         ok = false;
 
+    for (int i = 0; i < old_trail.size(); i++) {
+        oldreasons[var(old_trail[i])] = CRef_Undef;
+    }
+    old_trail.clear();
+    //if (!is_muser) {
+    cancelUntil(1);
+    if (decisionLevel() == 1) {
+        for (int i = trail_lim[0]; i < trail.size(); i++) {
+            if (reason(var(trail[i])) != CRef_Undef) {
+                if (level(var(trail[i])) == 1) {
+                    old_trail.push_(trail[i]);
+                    oldreasons[var(trail[i])] = reason(var(trail[i]));
+                }
+                else if (level(var(trail[i])) > 1) break;
+            }
+        }
+    }
+    //}
     cancelUntil(0);
     return status;
 }
@@ -1065,6 +1126,14 @@ void Solver::relocAll(ClauseAllocator& to)
         if (reason(v) != CRef_Undef && (ca[reason(v)].reloced() || locked(ca[reason(v)]))){
             assert(!isRemoved(reason(v)));
             ca.reloc(vardata[v].reason, to);
+        }
+    }
+    
+    for (int i = 0; i < old_trail.size(); i++){
+        Var v = var(old_trail[i]);
+        if (oldreasons[v] != CRef_Undef && (ca[oldreasons[v]].reloced() || locked(ca[oldreasons[v]]))){
+            assert(!isRemoved(oldreasons[v]));
+            ca.reloc(oldreasons[v], to);
         }
     }
 

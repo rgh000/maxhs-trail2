@@ -410,7 +410,7 @@ void Muser::addMoreCrits(vector<Lit>& conflict, int64_t propBudget)
   
   assumptions.push(~clits[0]); //activate at-most-one
   setPropBudget(propBudget > 0, propBudget);
-
+    is_muser = true;
   while((critVal = solve_()) == l_True) {
     satSolves++;
     for(size_t j = 0; j < conflict.size(); j++) {
